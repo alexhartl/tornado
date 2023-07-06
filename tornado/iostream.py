@@ -33,6 +33,7 @@ import socket
 import ssl
 import sys
 import re
+import threading
 
 from tornado.concurrent import Future, future_set_result_unless_cancelled
 from tornado import ioloop
@@ -278,6 +279,7 @@ class BaseIOStream(object):
         self._connecting = False
         self._state = None  # type: Optional[int]
         self._closed = False
+        self._write_lock = threading.Lock()
 
     def fileno(self) -> Union[int, ioloop._Selectable]:
         """Returns the file descriptor for this stream."""
@@ -959,10 +961,11 @@ class BaseIOStream(object):
                     # with more than 128KB at a time.
                     size = 128 * 1024
 
-                num_bytes = self.write_to_fd(self._write_buffer.peek(size))
-                if num_bytes == 0:
-                    break
-                self._write_buffer.advance(num_bytes)
+                with self._write_lock:
+                    num_bytes = self.write_to_fd(self._write_buffer.peek(size))
+                    if num_bytes == 0:
+                        break
+                    self._write_buffer.advance(num_bytes)
                 self._total_write_done_index += num_bytes
             except BlockingIOError:
                 break
